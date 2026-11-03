@@ -1,0 +1,389 @@
+
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vriendenquiz</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;background:#f4f1e9;color:#171717;
+ font-family:Arial,sans-serif;padding:22px;
+}
+header{
+ border-bottom:1px solid #ccc;padding:12px 0 20px;
+ font-size:12px;letter-spacing:3px;
+}
+main{max-width:650px;margin:55px auto}
+h1{font-size:clamp(55px,13vw,85px);letter-spacing:-6px;line-height:.9}
+h1 span{color:#8ca92b}
+h2{font-size:38px;letter-spacing:-2px}
+p{color:#777;line-height:1.5}
+button{
+ width:100%;padding:18px;margin:6px 0;
+ background:#171717;color:white;border:1px solid #171717;
+ font-size:13px;font-weight:bold;cursor:pointer;
+}
+button:hover{background:#d5f45b;color:#171717}
+input,select{
+ width:100%;padding:14px;margin:8px 0 16px;
+ border:1px solid #ccc;background:white;font-size:15px;
+}
+label{font-size:14px;font-weight:bold}
+.question{padding:16px 0;border-bottom:1px solid #ddd}
+.question p{color:#171717;font-weight:bold}
+.card{
+ background:#fffdf8;border:1px solid #ddd;
+ padding:17px;margin:12px 0;
+}
+.card p{font-size:14px}
+.hidden{display:none}
+.back{
+ background:transparent;color:#171717;border:0;
+ text-align:left;padding:0;margin-bottom:25px;
+}
+.small{font-size:11px;color:#888}
+.status{color:#657e1d;font-size:13px}
+footer{
+ border-top:1px solid #ccc;padding-top:18px;
+ font-size:10px;letter-spacing:2px;color:#888;
+}
+</style>
+</head>
+
+<body>
+<header>✳ VRIENDENQUIZ</header>
+
+<main>
+
+<section id="home">
+<p>DE GROEPSQUIZ</p>
+<h1>Wie kent<br><span>wie?</span></h1>
+<p>Vul in, raad van wie de antwoorden zijn en ontdek wie de groep het best kent.</p>
+
+<button onclick="show('quiz')">VRAGENLIJST ↗</button>
+<button onclick="show('guess')">RADEN ↗</button>
+<button onclick="show('answers')">ANTWOORDEN ↗</button>
+<button onclick="show('scores')">SCOREBORD ↗</button>
+
+<p class="small">Je naam bij de vragenlijst blijft verborgen voor andere spelers.</p>
+<button onclick="show('moderator')" style="background:transparent;color:#888;border:0">MODERATOR</button>
+</section>
+
+<section id="quiz" class="hidden">
+<button class="back" onclick="show('home')">← TERUG</button>
+<h2>Vragenlijst</h2>
+<p>Vul alles eerlijk in. Je naam wordt verborgen.</p>
+
+<form id="quizForm">
+<label>Je naam</label>
+<input id="playerName" maxlength="40" required placeholder="Je naam">
+
+<div id="questions"></div>
+<button type="submit">ANTWOORDEN OPSLAAN ↗</button>
+</form>
+<p id="quizStatus" class="status"></p>
+</section>
+
+<section id="guess" class="hidden">
+<button class="back" onclick="show('home')">← TERUG</button>
+<h2>Raden</h2>
+<p>Van wie denk je dat elke inzending is?</p>
+
+<label>Jouw naam</label>
+<input id="guesserName" maxlength="40" placeholder="Je naam">
+
+<div id="guessList"></div>
+<button onclick="saveGuesses()">GOKKEN OPSLAAN ↗</button>
+<p id="guessStatus" class="status"></p>
+</section>
+
+<section id="answers" class="hidden">
+<button class="back" onclick="show('home')">← TERUG</button>
+<h2>Antwoorden</h2>
+<p>Alle inzendingen, zonder de namen.</p>
+<div id="answerList"></div>
+</section>
+
+<section id="scores" class="hidden">
+<button class="back" onclick="show('home')">← TERUG</button>
+<h2>Scorebord</h2>
+<div id="scoreList"></div>
+</section>
+
+<section id="moderator" class="hidden">
+<button class="back" onclick="show('home')">← TERUG</button>
+<h2>Moderator</h2>
+<p>Voer de moderatorcode in.</p>
+<input id="modPassword" type="password" placeholder="Moderatorcode">
+<button onclick="loginMod()">INLOGGEN ↗</button>
+<p id="modStatus" class="status"></p>
+<div id="modList"></div>
+</section>
+
+</main>
+
+<footer>VRIENDENQUIZ <span style="float:right">2026 ✳</span></footer>
+
+<script type="module">
+
+import { initializeApp }
+from "https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js";
+
+import {
+ getFirestore, collection, addDoc, getDocs,
+ deleteDoc, doc, serverTimestamp, query, orderBy
+} from "https://www.gstatic.com/firebasejs/13.2.0/firebase-firestore.js";
+
+// FIREBASE
+const firebaseConfig = {
+ apiKey: "AIzaSyDnCBN98bElsquqxnd4l7ZGqSOTZF06rXE",
+ authDomain: "groeppoep-42440.firebaseapp.com",
+ projectId: "groeppoep-42440",
+ storageBucket: "groeppoep-42440.firebasestorage.app",
+ messagingSenderId: "894171316800",
+ appId: "1:894171316800:web:1c06898d6b7e005cb9d5a5",
+ measurementId: "G-N92N7JVZCV"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// MODERATOR
+const MOD_PASSWORD = "RAGGEN";
+let isModerator = false;
+let entries = [];
+let currentGuesses = {};
+
+// VRAGEN
+const questions = [
+ "Wat is je favoriete artiest of band?",
+ "Wat is je favoriete liedje aller tijden?",
+ "Wat is je grootste angst?",
+ "Welk land zou je het liefst bezoeken?",
+ "Wat is je droombaan?",
+ "Wat is je favoriete film of serie?",
+ "Wat is je favoriete game?",
+ "Wat is je grootste guilty pleasure?",
+ "Zou je ooit naar een ander land verhuizen?",
+ "Zou je liever beroemd of rijk zijn?",
+ "Wat is je droomauto?",
+ "Vertrouw je mensen snel? (Ja/Nee)",
+ "Wat is iets waar je absoluut niet tegen kunt?",
+ "Welke bekende persoon zou je graag ontmoeten?",
+ "Zou je een jaar zonder sociale media kunnen?",
+ "Wat zou je als eerste kopen als je miljonair werd?",
+ "Wat is je favoriete herinnering met deze vriendengroep?",
+ "Wat is iets dat bijna niemand over jou weet?"
+];
+
+const $ = id => document.getElementById(id);
+
+function escapeHTML(value) {
+ return String(value ?? "").replace(/[&<>"']/g, c => ({
+  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+ }[c]));
+}
+
+window.show = async function(id) {
+ document.querySelectorAll("main section").forEach(s =>
+  s.classList.add("hidden")
+ );
+ $(id).classList.remove("hidden");
+
+ if(id==="guess" || id==="answers" || id==="scores" || id==="moderator") {
+  await loadEntries();
+ }
+ if(id==="guess") renderGuess();
+ if(id==="answers") renderAnswers();
+ if(id==="scores") renderScores();
+ if(id==="moderator" && isModerator) renderModerator();
+};
+
+// VRAGEN GENEREREN
+$("questions").innerHTML = questions.map((q,i)=>`
+ <div class="question">
+ <label>${i+1}. ${escapeHTML(q)}</label>
+ <input id="q${i}" maxlength="180" required placeholder="Jouw antwoord...">
+ </div>
+`).join("");
+
+// VRAGENLIJST OPSLAAN
+$("quizForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+
+ const name=$("playerName").value.trim();
+ const answers=questions.map((_,i)=>$("q"+i).value.trim());
+
+ if(!name || answers.some(a=>!a)){
+  $("quizStatus").textContent="Vul alles in!";
+  return;
+ }
+
+ try {
+  const snapshot=await getDocs(collection(db,"submissions"));
+  if(snapshot.docs.some(d=>
+   d.data().name.toLowerCase()===name.toLowerCase()
+  )){
+   $("quizStatus").textContent="Deze naam heeft al een inzending!";
+   return;
+  }
+
+  await addDoc(collection(db,"submissions"),{
+   name:name,
+   answers:answers,
+   createdAt:serverTimestamp()
+  });
+
+  $("quizStatus").textContent="Je antwoorden zijn opgeslagen!";
+  e.target.reset();
+
+ } catch(err) {
+  console.error(err);
+  $("quizStatus").textContent="Fout bij opslaan: "+err.message;
+ }
+});
+
+// DATA OPHALEN
+async function loadEntries(){
+ try {
+  const snapshot=await getDocs(
+   query(collection(db,"submissions"),orderBy("createdAt"))
+  );
+  entries=snapshot.docs.map(d=>({
+   id:d.id,
+   ...d.data()
+  }));
+ } catch(err) {
+  console.error(err);
+  alert("Firebase-fout: "+err.message);
+ }
+}
+
+// RADEN
+function renderGuess(){
+ if(!entries.length){
+  $("guessList").innerHTML="<p>Nog geen inzendingen.</p>";
+  return;
+ }
+
+ $("guessList").innerHTML=entries.map((entry,i)=>`
+  <div class="card">
+   <h3>INZENDING ${i+1}</h3>
+   ${questions.map((q,j)=>`
+    <p><b>${escapeHTML(q)}</b><br>${escapeHTML(entry.answers[j])}</p>
+   `).join("")}
+   <label>Van wie is deze inzending?</label>
+   <input id="g${i}" placeholder="Naam van je vriend">
+  </div>
+ `).join("");
+}
+
+window.saveGuesses=async function(){
+ const name=$("guesserName").value.trim();
+ if(!name){alert("Vul je naam in!");return;}
+
+ const guesses={};
+ entries.forEach((entry,i)=>{
+  const value=$("g"+i)?.value.trim();
+  if(value) guesses[entry.id]=value;
+ });
+
+ if(!Object.keys(guesses).length){
+  alert("Vul minstens één gok in!");
+  return;
+ }
+
+ try {
+  await addDoc(collection(db,"guesses"),{
+   name:name,
+   guesses:guesses,
+   createdAt:serverTimestamp()
+  });
+  $("guessStatus").textContent="Je gokken zijn opgeslagen!";
+ } catch(err) {
+  $("guessStatus").textContent="Fout: "+err.message;
+ }
+};
+
+// ANTWOORDEN
+function renderAnswers(){
+ $("answerList").innerHTML=entries.length ? entries.map((entry,i)=>`
+  <div class="card">
+   <h3>ANONIEME INZENDING ${i+1}</h3>
+   ${questions.map((q,j)=>`
+    <p><b>${escapeHTML(q)}</b><br>${escapeHTML(entry.answers[j])}</p>
+   `).join("")}
+  </div>
+ `).join(""):"<p>Nog geen inzendingen.</p>";
+}
+
+// SCOREBORD
+async function renderScores(){
+ try {
+  const snap=await getDocs(collection(db,"guesses"));
+  const results=snap.docs.map(d=>d.data()).map(g=>{
+   let score=0;
+   const total=Object.keys(g.guesses||{}).length;
+
+   for(const [id,guess] of Object.entries(g.guesses||{})){
+    const entry=entries.find(e=>e.id===id);
+    if(entry && entry.name.toLowerCase()===guess.toLowerCase()){
+     score++;
+    }
+   }
+   return {name:g.name,score,total};
+  }).sort((a,b)=>b.score-a.score);
+
+  $("scoreList").innerHTML=results.length ? results.map((r,i)=>`
+   <div class="card">
+    <h3>${i+1}. ${escapeHTML(r.name)}</h3>
+    <p><b>${r.score}</b> juiste gokken van ${r.total}</p>
+   </div>
+  `).join(""):"<p>Nog geen scores.</p>";
+
+ } catch(err){
+  $("scoreList").textContent=err.message;
+ }
+}
+
+// MODERATOR
+window.loginMod=function(){
+ if($("modPassword").value===MOD_PASSWORD){
+  isModerator=true;
+  $("modStatus").textContent="Moderator ingelogd!";
+  renderModerator();
+ } else {
+  $("modStatus").textContent="Verkeerde code!";
+ }
+};
+
+function renderModerator(){
+ $("modList").innerHTML=entries.map((entry,i)=>`
+  <div class="card">
+   <h3>${i+1}. ${escapeHTML(entry.name)}</h3>
+   <p>${entry.answers.length} antwoorden</p>
+   <button onclick="deleteEntry('${entry.id}')">VERWIJDER INZENDING</button>
+  </div>
+ `).join("") || "<p>Geen inzendingen.</p>";
+}
+
+window.deleteEntry=async function(id){
+ if(!isModerator)return;
+ if(!confirm("Weet je zeker dat je deze inzending wilt verwijderen?"))return;
+
+ try {
+  await deleteDoc(doc(db,"submissions",id));
+  $("modStatus").textContent="Inzending verwijderd!";
+  await loadEntries();
+  renderModerator();
+ } catch(err){
+  alert("Verwijderen mislukt: "+err.message);
+ }
+};
+
+</script>
+</body>
+</html>
